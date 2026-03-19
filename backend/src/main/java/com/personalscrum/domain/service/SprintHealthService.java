@@ -54,7 +54,7 @@ public class SprintHealthService {
                 }
             }
 
-            if (completionRate < 0.1 && !stories.isEmpty()) {
+            if (completionRate < 0.1) {
                 issues.add("Very low story completion rate (" + Math.round(completionRate * 100) + "%)");
                 score -= 10;
             }
