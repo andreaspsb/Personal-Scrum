@@ -14,7 +14,11 @@ public class SecurityUtils {
     private final UserRepository userRepository;
 
     public Long getCurrentUserId() {
-        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new ResourceNotFoundException("User not authenticated");
+        }
+        Object principal = authentication.getPrincipal();
         String email;
         if (principal instanceof UserDetails userDetails) {
             email = userDetails.getUsername();

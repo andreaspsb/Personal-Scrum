@@ -41,7 +41,7 @@ public class SprintHealthService {
                 } else if (!today.isBefore(sprint.getStartDate())) {
                     long totalDays = sprint.getStartDate().until(sprint.getEndDate()).getDays();
                     long elapsedDays = sprint.getStartDate().until(today).getDays();
-                    if (totalDays > 0) {
+                    if (totalDays > 0 && elapsedDays >= 0) {
                         double timeElapsed = (double) elapsedDays / totalDays;
                         if (timeElapsed > 0.5 && completionRate < 0.25) {
                             issues.add("Sprint is more than halfway done but less than 25% of stories completed");
