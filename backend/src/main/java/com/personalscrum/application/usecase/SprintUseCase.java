@@ -86,39 +86,14 @@ public class SprintUseCase {
     @Transactional
     public SprintDTO startSprint(Long id, Long userId) {
         Sprint sprint = findSprintForUser(id, userId);
-
-        if (sprint.getStatus() != SprintStatus.PLANNED) {
-            throw new IllegalStateException("Only PLANNED sprints can be started");
-        }
-
-        sprint.setStatus(SprintStatus.ACTIVE);
-        if (sprint.getStartDate() == null) {
-            sprint.setStartDate(LocalDate.now());
-        }
-
+        sprint.start();
         return toDTO(sprintRepository.save(sprint));
     }
 
     @Transactional
     public SprintDTO completeSprint(Long id, Long userId) {
         Sprint sprint = findSprintForUser(id, userId);
-
-        if (sprint.getStatus() != SprintStatus.ACTIVE) {
-            throw new IllegalStateException("Only ACTIVE sprints can be completed");
-        }
-
-        List<UserStory> stories = userStoryRepository.findBySprintId(sprint.getId());
-        int completedPoints = stories.stream()
-                .filter(s -> s.getStatus() == StoryStatus.DONE)
-                .mapToInt(s -> s.getStoryPoints() != null ? s.getStoryPoints() : 0)
-                .sum();
-
-        sprint.setStatus(SprintStatus.COMPLETED);
-        sprint.setVelocity(completedPoints);
-        if (sprint.getEndDate() == null) {
-            sprint.setEndDate(LocalDate.now());
-        }
-
+        sprint.complete();
         return toDTO(sprintRepository.save(sprint));
     }
 

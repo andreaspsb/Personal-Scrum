@@ -61,4 +61,44 @@ public class Sprint {
     @LastModifiedDate
     @Column(nullable = false)
     private LocalDateTime updatedAt;
+
+    public void start() {
+        if (this.status != SprintStatus.PLANNED) {
+            throw new IllegalStateException("Only PLANNED sprints can be started");
+        }
+        this.status = SprintStatus.ACTIVE;
+        if (this.startDate == null) {
+            this.startDate = LocalDate.now();
+        }
+    }
+
+    public void complete() {
+        if (this.status != SprintStatus.ACTIVE) {
+            throw new IllegalStateException("Only ACTIVE sprints can be completed");
+        }
+        this.status = SprintStatus.COMPLETED;
+        this.velocity = calculateVelocity();
+        if (this.endDate == null) {
+            this.endDate = LocalDate.now();
+        }
+    }
+
+    private int calculateVelocity() {
+        if (this.userStories == null) {
+            return 0;
+        }
+        return this.userStories.stream()
+                .filter(s -> s.getStatus() == StoryStatus.DONE)
+                .mapToInt(s -> s.getStoryPoints() != null ? s.getStoryPoints() : 0)
+                .sum();
+    }
+
+    public int getCompletedStoriesCount() {
+        if (this.userStories == null) {
+            return 0;
+        }
+        return (int) this.userStories.stream()
+                .filter(s -> s.getStatus() == StoryStatus.DONE)
+                .count();
+    }
 }

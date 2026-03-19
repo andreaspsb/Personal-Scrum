@@ -1,21 +1,44 @@
-# Backend
-backend/target/
-backend/*.class
+# Logs
+*.log
+backend-error*.log
+docker.log
+frontend-logs.log
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
-
-# Environment
-.env
-.env.local
-
-# IDE
+# Editor/IDE
 .idea/
 *.iml
 .vscode/
 *.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Backend (Maven)
+backend/target/
+backend/*.class
+backend/.mvn/
+backend/mvnw
+backend/mvnw.cmd
+
+# Frontend (Node/Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+frontend/vite.config.ts.timestamp-*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+.docker/
+docker-build.log
+
+# Temporary files
+tmp/
+error-body.json
+test.ps1

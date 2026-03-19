@@ -1,2 +1,8 @@
 target/
 *.class
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+dependency-reduced-pom.xml

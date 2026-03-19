@@ -198,7 +198,22 @@ export default function SprintBoardPage() {
             {COLUMNS.map(({ status, label }) => {
               const colStories = storiesByStatus(status)
               return (
-                <div key={status} className="kanban-column">
+                <div
+                  key={status}
+                  className="kanban-column"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const storyIdStr = e.dataTransfer.getData('storyId');
+                    if (storyIdStr) {
+                      const storyId = parseInt(storyIdStr, 10);
+                      const story = stories.find(s => s.id === storyId);
+                      if (story && story.status !== status) {
+                        updateStatusMutation.mutate({ storyId, status });
+                      }
+                    }
+                  }}
+                >
                   <div className="kanban-col-header">
                     <span className="kanban-col-title">{label}</span>
                     <span className="kanban-count">{colStories.length}</span>
@@ -211,13 +226,17 @@ export default function SprintBoardPage() {
                   {colStories.map((story) => (
                     <div
                       key={story.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('storyId', story.id.toString());
+                      }}
                       style={{
                         background: 'var(--surface2)',
                         border: '1px solid var(--border)',
                         borderRadius: 'var(--radius)',
                         padding: '0.65rem',
                         marginBottom: '0.5rem',
-                        cursor: 'pointer',
+                        cursor: 'grab',
                       }}
                       onClick={() => setSelectedStory(story)}
                     >

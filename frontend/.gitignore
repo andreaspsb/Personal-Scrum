@@ -2,3 +2,16 @@ node_modules
 dist
 .env
 .env.local
+.env.*.local
+
+# Vite
+vite.config.ts.timestamp-*
+
+# Lint
+.eslintcache
+
+# Logs
+*.log
+frontend-logs.log
+eslint.txt
+lint-results.txt
