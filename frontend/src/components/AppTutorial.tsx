@@ -1,6 +1,5 @@
 import { useState } from 'react'
-// @ts-ignore
-import Joyride, { Step, STATUS } from 'react-joyride'
+import { Joyride, Step, STATUS } from 'react-joyride'
 import { HelpCircle } from 'lucide-react'
 
 export default function AppTutorial() {
@@ -64,6 +63,8 @@ export default function AppTutorial() {
     }
   }
 
+  const JoyrideAny = Joyride as any;
+
   return (
     <>
       <button
@@ -90,7 +91,7 @@ export default function AppTutorial() {
         <HelpCircle size={24} />
       </button>
 
-      <Joyride
+      <JoyrideAny
         steps={steps}
         run={run}
         continuous
@@ -109,7 +110,7 @@ export default function AppTutorial() {
             primaryColor: '#6366f1',
             zIndex: 1000,
           }
-        }}
+        } as any}
       />
     </>
   )
