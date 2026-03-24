@@ -11,8 +11,8 @@ import ProjectCard from '../components/ProjectCard'
 import Modal from '../components/Modal'
 
 const schema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  description: z.string().min(1, 'Description is required'),
+  name: z.string().min(1, 'O nome é obrigatório'),
+  description: z.string().min(1, 'A descrição é obrigatória'),
   type: z.enum(['PERSONAL', 'PROFESSIONAL']),
 })
 
@@ -59,9 +59,9 @@ export default function ProjectsPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Projects</h1>
+        <h1 className="page-title">Projetos</h1>
         <button className="btn-primary" onClick={() => setShowModal(true)}>
-          <Plus size={16} /> New Project
+          <Plus size={16} /> Novo Projeto
         </button>
       </div>
 
@@ -81,13 +81,13 @@ export default function ProjectsPage() {
       {isLoading && (
         <div className="loading">
           <div className="spinner" />
-          Loading projects…
+          Carregando projetos...
         </div>
       )}
-      {isError && <div className="error-msg">Failed to load projects.</div>}
+      {isError && <div className="error-msg">Falha ao carregar projetos.</div>}
 
       {!isLoading && filtered.length === 0 && (
-        <div className="empty-state">No projects found. Create your first project!</div>
+        <div className="empty-state">Nenhum projeto encontrado. Crie seu primeiro projeto!</div>
       )}
 
       <div className="grid-2">
@@ -104,34 +104,34 @@ export default function ProjectsPage() {
         <Modal title="New Project" onClose={() => { setShowModal(false); reset() }}>
           <form onSubmit={handleSubmit(onSubmit)}>
             <div className="form-group">
-              <label htmlFor="proj-name">Name</label>
-              <input id="proj-name" type="text" placeholder="My Project" {...register('name')} />
+              <label htmlFor="proj-name">Nome</label>
+              <input id="proj-name" type="text" placeholder="Meu Projeto" {...register('name')} />
               {errors.name && <span className="form-error">{errors.name.message}</span>}
             </div>
 
             <div className="form-group">
-              <label htmlFor="proj-desc">Description</label>
-              <textarea id="proj-desc" placeholder="What is this project about?" {...register('description')} />
+              <label htmlFor="proj-desc">Descrição</label>
+              <textarea id="proj-desc" placeholder="Sobre o que é este projeto?" {...register('description')} />
               {errors.description && <span className="form-error">{errors.description.message}</span>}
             </div>
 
             <div className="form-group">
-              <label htmlFor="proj-type">Type</label>
+              <label htmlFor="proj-type">Tipo</label>
               <select id="proj-type" {...register('type')}>
-                <option value="PERSONAL">Personal</option>
-                <option value="PROFESSIONAL">Professional</option>
+                <option value="PERSONAL">Pessoal</option>
+                <option value="PROFESSIONAL">Profissional</option>
               </select>
               {errors.type && <span className="form-error">{errors.type.message}</span>}
             </div>
 
-            {mutation.isError && <div className="error-msg">Failed to create project.</div>}
+            {mutation.isError && <div className="error-msg">Falha ao criar projeto.</div>}
 
             <div className="modal-actions">
               <button type="button" className="btn-secondary" onClick={() => { setShowModal(false); reset() }}>
-                Cancel
+                Cancelar
               </button>
               <button type="submit" className="btn-primary" disabled={isSubmitting || mutation.isPending}>
-                {mutation.isPending ? 'Creating…' : 'Create Project'}
+                {mutation.isPending ? 'Criando...' : 'Criar Projeto'}
               </button>
             </div>
           </form>

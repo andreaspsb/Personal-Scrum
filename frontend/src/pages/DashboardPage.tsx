@@ -16,22 +16,22 @@ export default function DashboardPage() {
     <div>
       <div style={{ marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 800 }}>
-          Welcome back{user ? `, ${user.name}` : ''}! 👋
+          Bem-vindo de volta{user ? `, ${user.name}` : ''}! 👋
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-          Here's an overview of your personal scrum board.
+          Aqui está o resumo do seu quadro pessoal Scrum.
         </p>
       </div>
 
       {isLoading && (
         <div className="loading">
           <div className="spinner" />
-          Loading dashboard…
+          Carregando painel...
         </div>
       )}
 
       {isError && (
-        <div className="error-msg">Failed to load dashboard. Please try again.</div>
+        <div className="error-msg">Falha ao carregar painel. Tente novamente.</div>
       )}
 
       {data && (
@@ -40,22 +40,22 @@ export default function DashboardPage() {
           <div className="grid-stats">
             <div className="stat-card">
               <div className="stat-value">{data.totalProjects}</div>
-              <div className="stat-label">Total Projects</div>
+              <div className="stat-label">Total de Projetos</div>
             </div>
             <div className="stat-card">
               <div className="stat-value">{data.totalSprints}</div>
-              <div className="stat-label">Active Sprints</div>
+              <div className="stat-label">Sprints Ativas</div>
             </div>
             <div className="stat-card">
               <div className="stat-value">{data.completedStories}</div>
-              <div className="stat-label">Completed Stories</div>
+              <div className="stat-label">User Stories Concluídas</div>
             </div>
           </div>
 
           {/* Insights */}
           {data.insights.length > 0 && (
             <section style={{ marginBottom: '2rem' }}>
-              <p className="section-title">🔍 Proactive Insights</p>
+              <p className="section-title">🔍 Insights Proativos</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {data.insights.map((insight, idx) => (
                   <InsightCard key={idx} insight={insight} />
@@ -66,9 +66,9 @@ export default function DashboardPage() {
 
           {/* Active Sprints */}
           <section>
-            <p className="section-title">⚡ Active Sprints</p>
+            <p className="section-title">⚡ Sprints Ativas</p>
             {data.activeSprints.length === 0 ? (
-              <div className="empty-state">No active sprints. Start a sprint in your projects!</div>
+              <div className="empty-state">Nenhuma Sprint ativa. Inicie uma Sprint nos seus projetos!</div>
             ) : (
               <div className="grid-2">
                 {data.activeSprints.map((sprint) => (

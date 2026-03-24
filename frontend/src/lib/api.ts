@@ -8,6 +8,7 @@ import type {
   Dashboard,
   ScrumInsight,
   AuthResponse,
+  User,
 } from '../types'
 import { getToken, clearToken } from './auth'
 
@@ -128,3 +129,12 @@ export const resolveImpediment = (id: number) =>
 // Dashboard
 export const getDashboard = () => api.get<Dashboard>('/dashboard')
 export const getInsights = () => api.get<ScrumInsight[]>('/dashboard/insights')
+
+// Users
+export const getUsers = () => api.get<User[]>('/users')
+export const updateUserRole = (id: number, role: string) =>
+  api.put<User>(`/users/${id}/role`, { role })
+export const deleteUser = (id: number) => api.delete(`/users/${id}`)
+
+// Logs
+export const getSystemLogs = () => api.get<string>('/actuator/logfile')

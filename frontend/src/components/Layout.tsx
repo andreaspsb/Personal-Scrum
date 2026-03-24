@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, FolderKanban, LogOut } from 'lucide-react'
+import { LayoutDashboard, FolderKanban, LogOut, Users, FileText } from 'lucide-react'
 import { clearToken, getUser } from '../lib/auth'
+import AppTutorial from './AppTutorial'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -58,15 +59,33 @@ export default function Layout({ children }: LayoutProps) {
             style={({ isActive }) => navLinkStyle(isActive)}
           >
             <LayoutDashboard size={16} />
-            Dashboard
+            Painel (Dashboard)
           </NavLink>
           <NavLink
             to="/projects"
             style={({ isActive }) => navLinkStyle(isActive)}
           >
             <FolderKanban size={16} />
-            Projects
+            Projetos
           </NavLink>
+          {user?.role === 'ROLE_ADMIN' && (
+            <>
+              <NavLink
+                to="/users"
+                style={({ isActive }) => navLinkStyle(isActive)}
+              >
+                <Users size={16} />
+                Usuários
+              </NavLink>
+              <NavLink
+                to="/logs"
+                style={({ isActive }) => navLinkStyle(isActive)}
+              >
+                <FileText size={16} />
+                Logs do Sistema
+              </NavLink>
+            </>
+          )}
         </nav>
 
         {/* Logout */}
@@ -96,7 +115,7 @@ export default function Layout({ children }: LayoutProps) {
             }}
           >
             <LogOut size={16} />
-            Logout
+            Sair
           </button>
         </div>
       </aside>
@@ -107,8 +126,10 @@ export default function Layout({ children }: LayoutProps) {
           flex: 1,
           overflow: 'auto',
           padding: '1.75rem 2rem',
+          position: 'relative'
         }}
       >
+        <AppTutorial />
         {children}
       </main>
     </div>

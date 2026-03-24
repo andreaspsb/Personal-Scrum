@@ -26,8 +26,8 @@ const COLUMNS: { status: StoryStatus; label: string }[] = [
 ]
 
 const impedimentSchema = z.object({
-  title: z.string().min(1, 'Title is required'),
-  description: z.string().min(1, 'Description is required'),
+  title: z.string().min(1, 'O título é obrigatório'),
+  description: z.string().min(1, 'A descrição é obrigatória'),
 })
 type ImpedimentForm = z.infer<typeof impedimentSchema>
 
@@ -140,7 +140,7 @@ export default function SprintBoardPage() {
       <div className="page-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <button className="btn-ghost" onClick={() => navigate(-1)}>
-            <ArrowLeft size={14} /> Back
+            <ArrowLeft size={14} /> Voltar
           </button>
           <div>
             <h1 className="page-title">
@@ -171,7 +171,7 @@ export default function SprintBoardPage() {
               disabled={startMutation.isPending}
             >
               <Play size={14} />
-              {startMutation.isPending ? 'Starting…' : 'Start Sprint'}
+              {startMutation.isPending ? 'Iniciando...' : 'Iniciar Sprint'}
             </button>
           )}
           {sprintInfo?.status === 'ACTIVE' && (
@@ -181,14 +181,14 @@ export default function SprintBoardPage() {
               disabled={completeMutation.isPending}
             >
               <CheckCircle size={14} />
-              {completeMutation.isPending ? 'Completing…' : 'Complete Sprint'}
+              {completeMutation.isPending ? 'Concluindo...' : 'Concluir Sprint'}
             </button>
           )}
         </div>
       </div>
 
       {isLoading && (
-        <div className="loading"><div className="spinner" />Loading sprint board…</div>
+        <div className="loading"><div className="spinner" />Carregando quadro da Sprint...</div>
       )}
 
       {!isLoading && (
@@ -263,16 +263,16 @@ export default function SprintBoardPage() {
           {/* Impediments */}
           <section style={{ marginTop: '2rem' }}>
             <div className="page-header">
-              <p className="section-title">🚧 Impediments</p>
+              <p className="section-title">🚧 Impedimentos</p>
               <button className="btn-ghost" onClick={() => setShowImpedimentModal(true)}>
-                <Plus size={14} /> Add Impediment
+                <Plus size={14} /> Adicionar Impedimento
               </button>
             </div>
 
             {impLoading && <div className="loading"><div className="spinner" /></div>}
 
             {!impLoading && impediments.length === 0 && (
-              <div className="empty-state">No impediments. Great work!</div>
+              <div className="empty-state">Nenhum impedimento. Ótimo trabalho!</div>
             )}
 
             {impediments.map((imp: Impediment) => (
@@ -300,7 +300,7 @@ export default function SprintBoardPage() {
                     disabled={resolveMutation.isPending}
                     style={{ flexShrink: 0 }}
                   >
-                    Resolve
+                    Resolver
                   </button>
                 )}
               </div>
@@ -311,7 +311,7 @@ export default function SprintBoardPage() {
 
       {/* Story status modal */}
       {selectedStory && (
-        <Modal title="Update Story Status" onClose={() => setSelectedStory(null)}>
+        <Modal title="Atualizar Status da User Story" onClose={() => setSelectedStory(null)}>
           <div style={{ marginBottom: '1rem' }}>
             <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>{selectedStory.title}</div>
             {selectedStory.description && (
@@ -336,14 +336,14 @@ export default function SprintBoardPage() {
               )}
             </div>
             {updateStatusMutation.isError && (
-              <div className="error-msg">Failed to update story status.</div>
+              <div className="error-msg">Falha ao atualizar status da User Story.</div>
             )}
             <div className="modal-actions">
               <button type="button" className="btn-secondary" onClick={() => setSelectedStory(null)}>
-                Cancel
+                Cancelar
               </button>
               <button type="submit" className="btn-primary" disabled={updateStatusMutation.isPending}>
-                {updateStatusMutation.isPending ? 'Saving…' : 'Update Status'}
+                {updateStatusMutation.isPending ? 'Salvando...' : 'Atualizar Status'}
               </button>
             </div>
           </form>
@@ -352,25 +352,25 @@ export default function SprintBoardPage() {
 
       {/* Impediment modal */}
       {showImpedimentModal && (
-        <Modal title="Add Impediment" onClose={() => { setShowImpedimentModal(false); impReset() }}>
+        <Modal title="Adicionar Impedimento" onClose={() => { setShowImpedimentModal(false); impReset() }}>
           <form onSubmit={impSubmit((d) => impedimentMutation.mutate(d))}>
             <div className="form-group">
-              <label htmlFor="imp-title">Title</label>
-              <input id="imp-title" type="text" placeholder="Impediment title" {...impReg('title')} />
+              <label htmlFor="imp-title">Título</label>
+              <input id="imp-title" type="text" placeholder="Título do impedimento" {...impReg('title')} />
               {impErrors.title && <span className="form-error">{impErrors.title.message}</span>}
             </div>
             <div className="form-group">
-              <label htmlFor="imp-desc">Description</label>
-              <textarea id="imp-desc" placeholder="Describe the impediment…" {...impReg('description')} />
+              <label htmlFor="imp-desc">Descrição</label>
+              <textarea id="imp-desc" placeholder="Descreva o impedimento..." {...impReg('description')} />
               {impErrors.description && <span className="form-error">{impErrors.description.message}</span>}
             </div>
-            {impedimentMutation.isError && <div className="error-msg">Failed to add impediment.</div>}
+            {impedimentMutation.isError && <div className="error-msg">Falha ao adicionar impedimento.</div>}
             <div className="modal-actions">
               <button type="button" className="btn-secondary" onClick={() => { setShowImpedimentModal(false); impReset() }}>
-                Cancel
+                Cancelar
               </button>
               <button type="submit" className="btn-primary" disabled={impedimentMutation.isPending}>
-                {impedimentMutation.isPending ? 'Adding…' : 'Add Impediment'}
+                {impedimentMutation.isPending ? 'Adicionando...' : 'Adicionar Impedimento'}
               </button>
             </div>
           </form>

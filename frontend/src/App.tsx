@@ -7,6 +7,8 @@ import DashboardPage from './pages/DashboardPage'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import SprintBoardPage from './pages/SprintBoardPage'
+import UsersPage from './pages/UsersPage'
+import SystemLogs from './pages/SystemLogs'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated()) {
@@ -50,6 +52,22 @@ export default function App() {
           element={
             <PrivateRoute>
               <SprintBoardPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <PrivateRoute>
+              <UsersPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/logs"
+          element={
+            <PrivateRoute>
+              <SystemLogs />
             </PrivateRoute>
           }
         />

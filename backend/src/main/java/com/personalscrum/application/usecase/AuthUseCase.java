@@ -44,7 +44,7 @@ public class AuthUseCase {
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getEmail());
         String token = jwtService.generateToken(userDetails);
 
-        return new AuthResponse(token, null, new UserDTO(user.getId(), user.getName(), user.getEmail()));
+        return new AuthResponse(token, null, new UserDTO(user.getId(), user.getName(), user.getEmail(), user.getRole()));
     }
 
     @Transactional(readOnly = true)
@@ -66,6 +66,6 @@ public class AuthUseCase {
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getEmail());
         String token = jwtService.generateToken(userDetails);
 
-        return new AuthResponse(token, null, new UserDTO(user.getId(), user.getName(), user.getEmail()));
+        return new AuthResponse(token, null, new UserDTO(user.getId(), user.getName(), user.getEmail(), user.getRole()));
     }
 }
