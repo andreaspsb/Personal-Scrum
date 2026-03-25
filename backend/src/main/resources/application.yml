@@ -1,8 +1,5 @@
 spring:
   datasource:
-    url: jdbc:${DATABASE_URL:postgresql://localhost:5432/personalscrum}
-    username: ${DATABASE_USER:postgres}
-    password: ${DATABASE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
