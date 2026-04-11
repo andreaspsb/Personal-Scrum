@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus } from 'lucide-react'
 import { getProjects, createProject } from '../lib/api'
-import type { ProjectType, ProjectFormat } from '../types'
+import type { ProjectType } from '../types'
 import ProjectCard from '../components/ProjectCard'
 import Modal from '../components/Modal'
 

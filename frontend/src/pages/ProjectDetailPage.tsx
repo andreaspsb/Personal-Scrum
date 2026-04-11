@@ -13,7 +13,7 @@ import {
   moveToSprint,
   getProject,
 } from '../lib/api'
-import type { Sprint, UserStory, ProjectFormat } from '../types'
+import type { Sprint, UserStory } from '../types'
 import SprintCard from '../components/SprintCard'
 import StoryCard from '../components/StoryCard'
 import Modal from '../components/Modal'
@@ -59,7 +59,6 @@ export default function ProjectDetailPage() {
   })
 
   const isKanban = project?.format === 'KANBAN'
-  const activeTab = isKanban ? 'board' : (tab === 'board' ? 'sprints' : tab)
 
   /* ── Data ── */
   const { data: sprints = [], isLoading: sprintsLoading } = useQuery({
