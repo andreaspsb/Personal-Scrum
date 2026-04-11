@@ -1,5 +1,6 @@
 package com.personalscrum.application.dto;
 
+import com.personalscrum.domain.entity.ProjectFormat;
 import com.personalscrum.domain.entity.ProjectStatus;
 import com.personalscrum.domain.entity.ProjectType;
 
@@ -10,6 +11,7 @@ public record ProjectDTO(
         String name,
         String description,
         ProjectType type,
+        ProjectFormat format,
         ProjectStatus status,
         LocalDateTime createdAt
 ) {}

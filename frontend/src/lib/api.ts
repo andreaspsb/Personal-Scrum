@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   Project,
   ProjectType,
+  ProjectFormat,
   Sprint,
   UserStory,
   Impediment,
@@ -45,10 +46,14 @@ export const register = (data: { name: string; email: string; password: string }
 export const getProjects = (type?: ProjectType) =>
   api.get<Project[]>('/projects', { params: type ? { type } : {} })
 
+export const getProject = (id: number) =>
+  api.get<Project>(`/projects/${id}`)
+
 export const createProject = (data: {
   name: string
   description: string
   type: ProjectType
+  format: ProjectFormat
 }) => api.post<Project>('/projects', data)
 
 export const updateProject = (

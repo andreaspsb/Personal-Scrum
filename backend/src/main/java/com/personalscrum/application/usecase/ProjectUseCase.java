@@ -23,10 +23,13 @@ public class ProjectUseCase {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
+        ProjectFormat format = request.format() != null ? request.format() : ProjectFormat.SCRUM;
+
         Project project = Project.builder()
                 .name(request.name())
                 .description(request.description())
                 .type(request.type())
+                .format(format)
                 .status(ProjectStatus.ACTIVE)
                 .user(user)
                 .build();
@@ -84,6 +87,7 @@ public class ProjectUseCase {
                 project.getName(),
                 project.getDescription(),
                 project.getType(),
+                project.getFormat(),
                 project.getStatus(),
                 project.getCreatedAt()
         );

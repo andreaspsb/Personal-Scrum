@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus } from 'lucide-react'
 import { getProjects, createProject } from '../lib/api'
-import type { ProjectType } from '../types'
+import type { ProjectType, ProjectFormat } from '../types'
 import ProjectCard from '../components/ProjectCard'
 import Modal from '../components/Modal'
 
@@ -14,6 +14,7 @@ const schema = z.object({
   name: z.string().min(1, 'O nome é obrigatório'),
   description: z.string().min(1, 'A descrição é obrigatória'),
   type: z.enum(['PERSONAL', 'PROFESSIONAL']),
+  format: z.enum(['SCRUM', 'KANBAN']),
 })
 
 type FormData = z.infer<typeof schema>
@@ -47,7 +48,7 @@ export default function ProjectsPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { type: 'PERSONAL' },
+    defaultValues: { type: 'PERSONAL', format: 'SCRUM' },
   })
 
   const onSubmit = (data: FormData) => {
@@ -122,6 +123,15 @@ export default function ProjectsPage() {
                 <option value="PROFESSIONAL">Profissional</option>
               </select>
               {errors.type && <span className="form-error">{errors.type.message}</span>}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="proj-format">Formato</label>
+              <select id="proj-format" {...register('format')}>
+                <option value="SCRUM">Scrum (com Sprints)</option>
+                <option value="KANBAN">Kanban (simples)</option>
+              </select>
+              {errors.format && <span className="form-error">{errors.format.message}</span>}
             </div>
 
             {mutation.isError && <div className="error-msg">Falha ao criar projeto.</div>}

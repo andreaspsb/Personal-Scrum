@@ -1,4 +1,5 @@
 export type ProjectType = 'PERSONAL' | 'PROFESSIONAL'
+export type ProjectFormat = 'SCRUM' | 'KANBAN'
 export type ProjectStatus = 'ACTIVE' | 'COMPLETED' | 'PAUSED'
 export type SprintStatus = 'PLANNED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
 export type StoryStatus = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'DONE'
@@ -17,6 +18,7 @@ export interface Project {
   name: string
   description: string
   type: ProjectType
+  format: ProjectFormat
   status: ProjectStatus
   createdAt: string
 }

@@ -31,7 +31,7 @@ public class ScrumMasterUseCase {
 
         List<ProjectDTO> activeProjectDTOs = allProjects.stream()
                 .filter(p -> p.getStatus() == ProjectStatus.ACTIVE)
-                .map(p -> new ProjectDTO(p.getId(), p.getName(), p.getDescription(), p.getType(), p.getStatus(), p.getCreatedAt()))
+                .map(p -> new ProjectDTO(p.getId(), p.getName(), p.getDescription(), p.getType(), p.getFormat(), p.getStatus(), p.getCreatedAt()))
                 .toList();
 
         List<SprintDTO> activeSprintDTOs = activeSprints.stream()
@@ -69,7 +69,14 @@ public class ScrumMasterUseCase {
     private List<ScrumInsightDTO> generateInsights(Long userId, List<Project> projects, List<Sprint> activeSprints) {
         List<ScrumInsightDTO> insights = new ArrayList<>();
 
+        // Filtrar apenas projetos SCRUM para insights específicos de Sprint
+        List<Project> scrumProjects = projects.stream()
+                .filter(p -> p.getFormat() == ProjectFormat.SCRUM)
+                .toList();
+
         for (Sprint sprint : activeSprints) {
+            // Pular sprints de projetos KANBAN
+            if (sprint.getProject().getFormat() != ProjectFormat.SCRUM) continue;
             List<UserStory> stories = userStoryRepository.findBySprintId(sprint.getId());
             SprintHealthService.SprintHealth health = sprintHealthService.calculateHealthScore(sprint, stories);
 
@@ -148,7 +155,7 @@ public class ScrumMasterUseCase {
                     });
         }
 
-        for (Project project : projects) {
+        for (Project project : scrumProjects) {
             if (project.getStatus() != ProjectStatus.ACTIVE) continue;
 
             List<Sprint> projectSprints = sprintRepository.findByProjectIdAndStatus(project.getId(), SprintStatus.ACTIVE);

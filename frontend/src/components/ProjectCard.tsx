@@ -7,6 +7,7 @@ interface ProjectCardProps {
 
 export default function ProjectCard({ project, onClick }: ProjectCardProps) {
   const typeKey = project.type.toLowerCase()
+  const formatKey = project.format?.toLowerCase() || 'scrum'
   const statusKey = project.status.toLowerCase()
 
   return (
@@ -20,7 +21,10 @@ export default function ProjectCard({ project, onClick }: ProjectCardProps) {
           ? project.description.slice(0, 100) + '…'
           : project.description}
       </p>
-      <span className={`badge badge-${statusKey}`}>{project.status}</span>
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <span className={`badge badge-${formatKey}`}>{project.format || 'SCRUM'}</span>
+        <span className={`badge badge-${statusKey}`}>{project.status}</span>
+      </div>
     </div>
   )
 }

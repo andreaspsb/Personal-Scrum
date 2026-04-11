@@ -37,6 +37,11 @@ public class Project {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     @Builder.Default
+    private ProjectFormat format = ProjectFormat.SCRUM;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
     private ProjectStatus status = ProjectStatus.ACTIVE;
 
     @ManyToOne(fetch = FetchType.LAZY)

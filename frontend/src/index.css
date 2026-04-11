@@ -197,6 +197,10 @@ textarea { resize: vertical; min-height: 80px; }
 .badge-personal      { background: #2e1065; color: #d8b4fe; }
 .badge-professional  { background: #1e3a5f; color: #93c5fd; }
 
+/* Format badges */
+.badge-scrum       { background: #14532d; color: #86efac; }
+.badge-kanban     { background: #7c2d12; color: #fcd34d; }
+
 /* ── Modal ── */
 .modal-overlay {
   position: fixed;

@@ -11,8 +11,9 @@ import {
   getBacklog,
   createStory,
   moveToSprint,
+  getProject,
 } from '../lib/api'
-import type { Sprint, UserStory } from '../types'
+import type { Sprint, UserStory, ProjectFormat } from '../types'
 import SprintCard from '../components/SprintCard'
 import StoryCard from '../components/StoryCard'
 import Modal from '../components/Modal'
@@ -36,7 +37,7 @@ const storySchema = z.object({
 })
 type StoryForm = z.infer<typeof storySchema>
 
-type ActiveTab = 'sprints' | 'backlog'
+type ActiveTab = 'sprints' | 'backlog' | 'board'
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -50,6 +51,16 @@ export default function ProjectDetailPage() {
   const [moveStory, setMoveStory] = useState<UserStory | null>(null)
   const [targetSprintId, setTargetSprintId] = useState<string>('')
 
+  /* ── Project (to get format) ── */
+  const { data: project } = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => getProject(projectId).then((r) => r.data),
+    enabled: !!projectId,
+  })
+
+  const isKanban = project?.format === 'KANBAN'
+  const activeTab = isKanban ? 'board' : (tab === 'board' ? 'sprints' : tab)
+
   /* ── Data ── */
   const { data: sprints = [], isLoading: sprintsLoading } = useQuery({
     queryKey: ['sprints', projectId],
@@ -60,7 +71,7 @@ export default function ProjectDetailPage() {
   const { data: backlog = [], isLoading: backlogLoading } = useQuery({
     queryKey: ['backlog', projectId],
     queryFn: () => getBacklog(projectId).then((r) => r.data),
-    enabled: !!projectId && tab === 'backlog',
+    enabled: !!projectId && (tab === 'backlog' || tab === 'board'),
   })
 
   /* ── Sprint mutation ── */
@@ -134,18 +145,25 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs - hide Sprints for KANBAN */}
       <div className="tabs">
-        <button className={`tab ${tab === 'sprints' ? 'active' : ''}`} onClick={() => setTab('sprints')}>
-          Sprints
-        </button>
+        {!isKanban && (
+          <button className={`tab ${tab === 'sprints' ? 'active' : ''}`} onClick={() => setTab('sprints')}>
+            Sprints
+          </button>
+        )}
+        {isKanban && (
+          <button className={`tab ${tab === 'board' ? 'active' : ''}`} onClick={() => setTab('board')}>
+            Board
+          </button>
+        )}
         <button className={`tab ${tab === 'backlog' ? 'active' : ''}`} onClick={() => setTab('backlog')}>
           Backlog
         </button>
       </div>
 
-      {/* Sprints Tab */}
-      {tab === 'sprints' && (
+      {/* Sprints Tab - only for SCRUM projects */}
+      {tab === 'sprints' && !isKanban && (
         <>
           <div className="page-header">
             <p className="section-title">Sprints</p>
@@ -197,6 +215,38 @@ export default function ProjectDetailPage() {
                       <MoveRight size={14} />
                     </button>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Kanban Board Tab - only for KANBAN projects */}
+      {tab === 'board' && isKanban && (
+        <>
+          <div className="page-header">
+            <p className="section-title">Board</p>
+            <button className="btn-primary" onClick={() => setShowStoryModal(true)}>
+              <Plus size={16} /> New Task
+            </button>
+          </div>
+          {backlogLoading ? (
+            <div className="loading"><div className="spinner" /></div>
+          ) : backlog.length === 0 ? (
+            <div className="empty-state">No tasks yet. Create your first task!</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+              {(['TODO', 'IN_PROGRESS', 'DONE'] as const).map((column) => (
+                <div key={column} style={{ background: 'var(--card)', padding: '1rem', borderRadius: '8px' }}>
+                  <h3 style={{ marginBottom: '1rem', textAlign: 'center', textTransform: 'uppercase', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {column === 'TODO' ? 'To Do' : column === 'IN_PROGRESS' ? 'In Progress' : 'Done'}
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {backlog.filter((s) => s.status === column).map((story) => (
+                      <StoryCard key={story.id} story={story} />
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
