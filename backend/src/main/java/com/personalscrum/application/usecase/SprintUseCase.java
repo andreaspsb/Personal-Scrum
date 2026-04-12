@@ -27,6 +27,10 @@ public class SprintUseCase {
         Project project = projectRepository.findByIdAndUserId(request.projectId(), userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
 
+        if (project.getFormat() != ProjectFormat.SCRUM) {
+            throw new IllegalStateException("Sprints are only available for SCRUM projects");
+        }
+
         Sprint sprint = Sprint.builder()
                 .name(request.name())
                 .goal(request.goal())

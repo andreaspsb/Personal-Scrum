@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
@@ -59,6 +59,12 @@ export default function ProjectDetailPage() {
   })
 
   const isKanban = project?.format === 'KANBAN'
+
+  useEffect(() => {
+    if (isKanban && tab === 'sprints') {
+      setTab('board')
+    }
+  }, [isKanban, tab])
 
   /* ── Data ── */
   const { data: sprints = [], isLoading: sprintsLoading } = useQuery({

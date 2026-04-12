@@ -25,13 +25,17 @@ public class UserStoryUseCase {
         Project project = projectRepository.findByIdAndUserId(request.projectId(), userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
 
+        StoryStatus initialStatus = project.getFormat() == ProjectFormat.KANBAN
+                ? StoryStatus.TODO
+                : StoryStatus.BACKLOG;
+
         UserStory story = UserStory.builder()
                 .title(request.title())
                 .description(request.description())
                 .acceptanceCriteria(request.acceptanceCriteria())
                 .storyPoints(request.storyPoints())
                 .priority(request.priority() != null ? request.priority() : Priority.MEDIUM)
-                .status(StoryStatus.BACKLOG)
+                .status(initialStatus)
                 .project(project)
                 .build();
 
@@ -78,8 +82,14 @@ public class UserStoryUseCase {
             story.setStatus(request.status());
         }
         if (request.sprintId() != null) {
+            if (story.getProject().getFormat() != ProjectFormat.SCRUM) {
+                throw new IllegalStateException("Only SCRUM projects can assign stories to a sprint");
+            }
             Sprint sprint = sprintRepository.findById(request.sprintId())
                     .orElseThrow(() -> new ResourceNotFoundException("Sprint not found"));
+            if (!sprint.getProject().getId().equals(story.getProject().getId())) {
+                throw new IllegalArgumentException("Story and sprint must belong to the same project");
+            }
             story.setSprint(sprint);
         }
 
@@ -89,11 +99,18 @@ public class UserStoryUseCase {
     @Transactional
     public UserStoryDTO moveToSprint(Long storyId, Long sprintId, Long userId) {
         UserStory story = findStoryForUser(storyId, userId);
+        if (story.getProject().getFormat() != ProjectFormat.SCRUM) {
+            throw new IllegalStateException("Only SCRUM projects can move stories to a sprint");
+        }
+
         Sprint sprint = sprintRepository.findById(sprintId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sprint not found"));
 
         if (!sprint.getProject().getUser().getId().equals(userId)) {
             throw new ResourceNotFoundException("Sprint not found");
+        }
+        if (!sprint.getProject().getId().equals(story.getProject().getId())) {
+            throw new IllegalArgumentException("Story and sprint must belong to the same project");
         }
 
         story.setSprint(sprint);
