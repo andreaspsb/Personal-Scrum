@@ -1,103 +1,137 @@
-import { FastifyInstance, FastifyRequest } from 'fastify'
-import { z } from 'zod'
-import pool from '../db'
-import { authenticate } from '../middleware/auth'
-import type { AuthenticatedUser, UserRow, UserDTO } from '../types'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import pool from '../db';
+import { authenticate } from '../middleware/auth';
+import { updateUserRoleSchema } from '../utils/validation';
+import { UserDTO } from '../types';
 
-type AuthRequest = FastifyRequest & { user: AuthenticatedUser }
+type AuthRequest = FastifyRequest & { userId: number };
 
-const updateRoleSchema = z.object({
-  role: z.string().min(1, 'Role is required'),
-})
-
-function toDTO(row: UserRow): UserDTO {
+function toUserDTO(row: {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}): UserDTO {
   return {
     id: row.id,
     name: row.name,
     email: row.email,
     role: row.role,
-  }
+  };
 }
 
 /**
- * Checks whether the authenticated user has the ADMIN role.
- * Mirrors Spring's @PreAuthorize("hasRole('ADMIN')") on UserController.
+ * Prehandler that verifies the authenticated user has ROLE_ADMIN.
  */
-function requireAdmin(user: AuthenticatedUser): boolean {
-  return user.role === 'ROLE_ADMIN'
+async function requireAdmin(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  const userId = (request as AuthRequest).userId;
+
+  const result = await pool.query<{ role: string }>(
+    'SELECT role FROM users WHERE id = $1',
+    [userId],
+  );
+
+  if (result.rows.length === 0 || result.rows[0].role !== 'ROLE_ADMIN') {
+    return reply.status(403).send({
+      timestamp: new Date().toISOString(),
+      status: 403,
+      error: 'Forbidden',
+      message: 'Access denied',
+    });
+  }
 }
 
-export default async function userRoutes(app: FastifyInstance): Promise<void> {
+export async function userRoutes(fastify: FastifyInstance): Promise<void> {
   /**
-   * GET /users
-   * Admin only — returns all users.
+   * GET /api/users
+   * Admin only
    */
-  app.get('/users', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    if (!requireAdmin(user)) {
-      return reply.status(403).send({ message: 'Access denied' })
-    }
-
-    const result = await pool.query<UserRow>(
-      'SELECT id, name, email, role, created_at, updated_at FROM users ORDER BY id ASC',
-    )
-
-    return reply.send(result.rows.map(toDTO))
-  })
+  fastify.get(
+    '/api/users',
+    { preHandler: [authenticate, requireAdmin] },
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const result = await pool.query(
+        'SELECT id, name, email, role FROM users ORDER BY id ASC',
+      );
+      return reply.send(result.rows.map(toUserDTO));
+    },
+  );
 
   /**
-   * PUT /users/:id/role
-   * Admin only — updates a user's role.
-   * Body: { role }
+   * PUT /api/users/:id/role
+   * Admin only
    */
-  app.put('/users/:id/role', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    if (!requireAdmin(user)) {
-      return reply.status(403).send({ message: 'Access denied' })
-    }
+  fastify.put(
+    '/api/users/:id/role',
+    { preHandler: [authenticate, requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
 
-    const { id } = request.params as { id: string }
-    const parsed = updateRoleSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
-    }
+      const parsed = updateUserRoleSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.errors.map((e) => e.message).join(', ');
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message,
+        });
+      }
 
-    // Normalize role: prefix with ROLE_ if not already present (mirrors Spring's UserUseCase)
-    let newRole = parsed.data.role.toUpperCase()
-    if (!newRole.startsWith('ROLE_')) {
-      newRole = `ROLE_${newRole}`
-    }
+      let { role } = parsed.data;
+      role = role.toUpperCase();
+      if (!role.startsWith('ROLE_')) {
+        role = `ROLE_${role}`;
+      }
 
-    const result = await pool.query<UserRow>(
-      `UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2
-       RETURNING id, name, email, role, created_at, updated_at`,
-      [newRole, id],
-    )
+      const result = await pool.query(
+        `UPDATE users SET role = $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, name, email, role`,
+        [role, id],
+      );
 
-    if ((result.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: `User not found with id ${id}` })
-    }
+      if (result.rows.length === 0) {
+        return reply.status(404).send({
+          timestamp: new Date().toISOString(),
+          status: 404,
+          error: 'Not Found',
+          message: `User not found with id ${id}`,
+        });
+      }
 
-    return reply.send(toDTO(result.rows[0]))
-  })
+      return reply.send(toUserDTO(result.rows[0]));
+    },
+  );
 
   /**
-   * DELETE /users/:id
-   * Admin only — deletes a user.
+   * DELETE /api/users/:id
+   * Admin only
    */
-  app.delete('/users/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    if (!requireAdmin(user)) {
-      return reply.status(403).send({ message: 'Access denied' })
-    }
+  fastify.delete(
+    '/api/users/:id',
+    { preHandler: [authenticate, requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id } = request.params as { id: string };
 
-    const { id } = request.params as { id: string }
-    const result = await pool.query('DELETE FROM users WHERE id = $1', [id])
+      const existing = await pool.query(
+        'SELECT id FROM users WHERE id = $1',
+        [id],
+      );
+      if (existing.rows.length === 0) {
+        return reply.status(404).send({
+          timestamp: new Date().toISOString(),
+          status: 404,
+          error: 'Not Found',
+          message: `User not found with id ${id}`,
+        });
+      }
 
-    if ((result.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: `User not found with id ${id}` })
-    }
-
-    return reply.status(204).send()
-  })
+      await pool.query('DELETE FROM users WHERE id = $1', [id]);
+      return reply.status(204).send();
+    },
+  );
 }

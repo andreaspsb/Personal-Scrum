@@ -1,96 +1,77 @@
-import Fastify from 'fastify'
-import cors from '@fastify/cors'
-import pool from './db'
-import authRoutes from './routes/auth'
-import projectRoutes from './routes/projects'
-import sprintRoutes from './routes/sprints'
-import storyRoutes from './routes/stories'
-import impedimentRoutes from './routes/impediments'
-import dashboardRoutes from './routes/dashboard'
-import userRoutes from './routes/users'
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import jwt from '@fastify/jwt';
 
-const app = Fastify({
-  logger: {
-    level: process.env.LOG_LEVEL ?? 'info',
-    transport:
-      process.env.NODE_ENV !== 'production'
-        ? { target: 'pino-pretty', options: { colorize: true } }
-        : undefined,
-  },
-})
+import { errorHandler } from './middleware/errorHandler';
+import { authRoutes } from './routes/auth';
+import { projectRoutes } from './routes/projects';
+import { sprintRoutes } from './routes/sprints';
+import { userStoryRoutes } from './routes/userStories';
+import { impedimentRoutes } from './routes/impediments';
+import { dashboardRoutes } from './routes/dashboard';
+import { userRoutes } from './routes/users';
 
-async function start(): Promise<void> {
-  // ── CORS ──────────────────────────────────────────────────────────────────────
+const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const HOST = '0.0.0.0';
+
+async function buildServer() {
+  const fastify = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? 'info',
+    },
+  });
+
+  // ─── CORS ──────────────────────────────────────────────────────────────────
   const allowedOrigins = (
     process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000,http://localhost:5173'
-  ).split(',').map((o) => o.trim())
+  ).split(',').map((o) => o.trim());
 
-  await app.register(cors, {
-    origin: (origin, cb) => {
-      // Allow requests with no origin (e.g. server-to-server, curl)
-      if (!origin) return cb(null, true)
-      if (allowedOrigins.includes(origin)) return cb(null, true)
-      cb(new Error('Not allowed by CORS'), false)
-    },
+  await fastify.register(cors, {
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['*'],
     credentials: true,
-  })
+  });
 
-  // ── Health check ──────────────────────────────────────────────────────────────
-  app.get('/health', async (_request, reply) => {
-    try {
-      await pool.query('SELECT 1')
-      return reply.send({ status: 'UP', db: 'UP' })
-    } catch {
-      return reply.status(503).send({ status: 'DOWN', db: 'DOWN' })
-    }
-  })
+  // ─── JWT ───────────────────────────────────────────────────────────────────
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
 
-  // ── Routes — all mounted under /api to match the Spring backend ───────────────
-  await app.register(authRoutes, { prefix: '/api' })
-  await app.register(projectRoutes, { prefix: '/api' })
-  await app.register(sprintRoutes, { prefix: '/api' })
-  await app.register(storyRoutes, { prefix: '/api' })
-  await app.register(impedimentRoutes, { prefix: '/api' })
-  await app.register(dashboardRoutes, { prefix: '/api' })
-  await app.register(userRoutes, { prefix: '/api' })
+  await fastify.register(jwt, {
+    secret: jwtSecret,
+  });
 
-  // ── Global error handler ──────────────────────────────────────────────────────
-  app.setErrorHandler((error, _request, reply) => {
-    app.log.error(error)
-    const statusCode = error.statusCode ?? 500
-    return reply.status(statusCode).send({
-      message: error.message ?? 'Internal server error',
-    })
-  })
+  // ─── Global error handler ──────────────────────────────────────────────────
+  fastify.setErrorHandler(errorHandler);
 
-  // ── Start ─────────────────────────────────────────────────────────────────────
-  const port = parseInt(process.env.PORT ?? '3000', 10)
-  const host = '0.0.0.0'
+  // ─── Health check ──────────────────────────────────────────────────────────
+  fastify.get('/health', async (_request, reply) => {
+    return reply.send({ status: 'UP', timestamp: new Date().toISOString() });
+  });
 
+  // ─── Routes ────────────────────────────────────────────────────────────────
+  await fastify.register(authRoutes);
+  await fastify.register(projectRoutes);
+  await fastify.register(sprintRoutes);
+  await fastify.register(userStoryRoutes);
+  await fastify.register(impedimentRoutes);
+  await fastify.register(dashboardRoutes);
+  await fastify.register(userRoutes);
+
+  return fastify;
+}
+
+async function start() {
   try {
-    await app.listen({ port, host })
-    app.log.info(`Personal Scrum Node.js backend listening on ${host}:${port}`)
+    const fastify = await buildServer();
+    await fastify.listen({ port: PORT, host: HOST });
+    console.log(`Server listening on ${HOST}:${PORT}`);
   } catch (err) {
-    app.log.error(err)
-    process.exit(1)
+    console.error('Failed to start server:', err);
+    process.exit(1);
   }
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  app.log.info('SIGTERM received — shutting down gracefully')
-  await app.close()
-  await pool.end()
-  process.exit(0)
-})
-
-process.on('SIGINT', async () => {
-  app.log.info('SIGINT received — shutting down gracefully')
-  await app.close()
-  await pool.end()
-  process.exit(0)
-})
-
-void start()
+start();

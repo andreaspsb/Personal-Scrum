@@ -1,190 +1,159 @@
-import { FastifyInstance, FastifyRequest } from 'fastify'
-import { z } from 'zod'
-import pool from '../db'
-import { authenticate } from '../middleware/auth'
-import type { AuthenticatedUser, ImpedimentRow, ImpedimentDTO } from '../types'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import pool from '../db';
+import { authenticate } from '../middleware/auth';
+import { createImpedimentSchema } from '../utils/validation';
+import { ImpedimentDTO } from '../types';
 
-type AuthRequest = FastifyRequest & { user: AuthenticatedUser }
+type AuthRequest = FastifyRequest & { userId: number };
 
-const createImpedimentSchema = z.object({
-  title: z.string().min(1, 'Title is required'),
-  description: z.string().optional().nullable(),
-  sprintId: z.number().int().positive(),
-})
-
-const updateImpedimentSchema = z.object({
-  title: z.string().min(1).optional(),
-  description: z.string().optional().nullable(),
-  resolved: z.boolean().optional(),
-})
-
-function toDTO(row: ImpedimentRow): ImpedimentDTO {
+function toImpedimentDTO(row: {
+  id: number;
+  title: string;
+  description: string | null;
+  resolved: boolean;
+  sprint_id: number;
+}): ImpedimentDTO {
   return {
     id: row.id,
     title: row.title,
     description: row.description,
     resolved: row.resolved,
     sprintId: row.sprint_id,
-  }
+  };
 }
 
-/**
- * Verify that a sprint belongs to a project owned by the given user.
- */
 async function findSprintForUser(
   sprintId: string | number,
   userId: number,
-): Promise<boolean> {
+  reply: FastifyReply,
+): Promise<{ id: number } | null> {
   const result = await pool.query(
     `SELECT s.id FROM sprints s
-     JOIN projects p ON p.id = s.project_id
+     JOIN projects p ON s.project_id = p.id
      WHERE s.id = $1 AND p.user_id = $2`,
     [sprintId, userId],
-  )
-  return (result.rowCount ?? 0) > 0
+  );
+
+  if (result.rows.length === 0) {
+    reply.status(404).send({
+      timestamp: new Date().toISOString(),
+      status: 404,
+      error: 'Not Found',
+      message: 'Sprint not found',
+    });
+    return null;
+  }
+
+  return result.rows[0];
 }
 
-export default async function impedimentRoutes(app: FastifyInstance): Promise<void> {
+export async function impedimentRoutes(fastify: FastifyInstance): Promise<void> {
   /**
-   * GET /impediments?sprintId=X
+   * GET /api/impediments?sprintId=:sprintId
    */
-  app.get('/impediments', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { sprintId } = request.query as { sprintId?: string }
+  fastify.get(
+    '/api/impediments',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { sprintId } = request.query as { sprintId?: string };
 
-    if (!sprintId) {
-      return reply.status(400).send({ message: 'sprintId query parameter is required' })
-    }
+      if (!sprintId) {
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message: 'sprintId query parameter is required',
+        });
+      }
 
-    const authorized = await findSprintForUser(sprintId, user.id)
-    if (!authorized) {
-      return reply.status(404).send({ message: 'Sprint not found' })
-    }
+      const sprint = await findSprintForUser(sprintId, userId, reply);
+      if (!sprint) return;
 
-    const result = await pool.query<ImpedimentRow>(
-      'SELECT * FROM impediments WHERE sprint_id = $1 ORDER BY created_at ASC',
-      [sprintId],
-    )
+      const result = await pool.query(
+        `SELECT id, title, description, resolved, sprint_id
+         FROM impediments WHERE sprint_id = $1
+         ORDER BY created_at ASC`,
+        [sprintId],
+      );
 
-    return reply.send(result.rows.map(toDTO))
-  })
-
-  /**
-   * POST /impediments
-   * Body: { title, description?, sprintId }
-   */
-  app.post('/impediments', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const parsed = createImpedimentSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
-    }
-    const { title, description, sprintId } = parsed.data
-
-    const authorized = await findSprintForUser(sprintId, user.id)
-    if (!authorized) {
-      return reply.status(404).send({ message: 'Sprint not found' })
-    }
-
-    const result = await pool.query<ImpedimentRow>(
-      `INSERT INTO impediments (title, description, resolved, sprint_id, created_at, updated_at)
-       VALUES ($1, $2, FALSE, $3, NOW(), NOW())
-       RETURNING *`,
-      [title, description ?? null, sprintId],
-    )
-
-    return reply.status(200).send(toDTO(result.rows[0]))
-  })
+      return reply.send(result.rows.map(toImpedimentDTO));
+    },
+  );
 
   /**
-   * PUT /impediments/:id
-   * Body: { title?, description?, resolved? }
+   * POST /api/impediments
    */
-  app.put('/impediments/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.post(
+    '/api/impediments',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
 
-    const parsed = updateImpedimentSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
-    }
+      const parsed = createImpedimentSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.errors.map((e) => e.message).join(', ');
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message,
+        });
+      }
 
-    // Verify impediment exists and belongs to user's sprint
-    const existing = await pool.query<ImpedimentRow>(
-      `SELECT i.* FROM impediments i
-       JOIN sprints s ON s.id = i.sprint_id
-       JOIN projects p ON p.id = s.project_id
-       WHERE i.id = $1 AND p.user_id = $2`,
-      [id, user.id],
-    )
-    if ((existing.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: 'Impediment not found' })
-    }
+      const { title, description, sprintId } = parsed.data;
 
-    const imp = existing.rows[0]
-    const { title, description, resolved } = parsed.data
+      const sprint = await findSprintForUser(sprintId, userId, reply);
+      if (!sprint) return;
 
-    const newTitle = (title && title.trim()) ? title : imp.title
-    const newDescription = description !== undefined ? description : imp.description
-    const newResolved = resolved !== undefined ? resolved : imp.resolved
+      const result = await pool.query(
+        `INSERT INTO impediments (title, description, resolved, sprint_id, created_at, updated_at)
+         VALUES ($1, $2, FALSE, $3, NOW(), NOW())
+         RETURNING id, title, description, resolved, sprint_id`,
+        [title, description ?? null, sprintId],
+      );
 
-    const result = await pool.query<ImpedimentRow>(
-      `UPDATE impediments
-       SET title = $1, description = $2, resolved = $3, updated_at = NOW()
-       WHERE id = $4
-       RETURNING *`,
-      [newTitle, newDescription, newResolved, id],
-    )
-
-    return reply.send(toDTO(result.rows[0]))
-  })
+      return reply.status(200).send(toImpedimentDTO(result.rows[0]));
+    },
+  );
 
   /**
-   * DELETE /impediments/:id
+   * POST /api/impediments/:id/resolve
    */
-  app.delete('/impediments/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.post(
+    '/api/impediments/:id/resolve',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { id } = request.params as { id: string };
 
-    const existing = await pool.query(
-      `SELECT i.id FROM impediments i
-       JOIN sprints s ON s.id = i.sprint_id
-       JOIN projects p ON p.id = s.project_id
-       WHERE i.id = $1 AND p.user_id = $2`,
-      [id, user.id],
-    )
-    if ((existing.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: 'Impediment not found' })
-    }
+      // Verify impediment exists and belongs to user
+      const impedimentResult = await pool.query(
+        `SELECT i.id, i.title, i.description, i.resolved, i.sprint_id
+         FROM impediments i
+         JOIN sprints s ON i.sprint_id = s.id
+         JOIN projects p ON s.project_id = p.id
+         WHERE i.id = $1 AND p.user_id = $2`,
+        [id, userId],
+      );
 
-    await pool.query('DELETE FROM impediments WHERE id = $1', [id])
-    return reply.status(204).send()
-  })
+      if (impedimentResult.rows.length === 0) {
+        return reply.status(404).send({
+          timestamp: new Date().toISOString(),
+          status: 404,
+          error: 'Not Found',
+          message: 'Impediment not found',
+        });
+      }
 
-  /**
-   * POST /impediments/:id/resolve
-   * Marks an impediment as resolved.
-   */
-  app.post('/impediments/:id/resolve', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+      const result = await pool.query(
+        `UPDATE impediments SET resolved = TRUE, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, title, description, resolved, sprint_id`,
+        [id],
+      );
 
-    const existing = await pool.query<ImpedimentRow>(
-      `SELECT i.* FROM impediments i
-       JOIN sprints s ON s.id = i.sprint_id
-       JOIN projects p ON p.id = s.project_id
-       WHERE i.id = $1 AND p.user_id = $2`,
-      [id, user.id],
-    )
-    if ((existing.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: 'Impediment not found' })
-    }
-
-    const result = await pool.query<ImpedimentRow>(
-      `UPDATE impediments SET resolved = TRUE, updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [id],
-    )
-
-    return reply.send(toDTO(result.rows[0]))
-  })
+      return reply.send(toImpedimentDTO(result.rows[0]));
+    },
+  );
 }

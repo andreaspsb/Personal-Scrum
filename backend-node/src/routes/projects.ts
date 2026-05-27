@@ -1,160 +1,206 @@
-import { FastifyInstance, FastifyRequest } from 'fastify'
-import { z } from 'zod'
-import pool from '../db'
-import { authenticate } from '../middleware/auth'
-import type { AuthenticatedUser, ProjectRow, ProjectDTO } from '../types'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import pool from '../db';
+import { authenticate } from '../middleware/auth';
+import { createProjectSchema, updateProjectSchema } from '../utils/validation';
+import { ProjectDTO, ProjectType } from '../types';
 
-type AuthRequest = FastifyRequest & { user: AuthenticatedUser }
+type AuthRequest = FastifyRequest & { userId: number };
 
-const createProjectSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  description: z.string().optional().nullable(),
-  type: z.enum(['PERSONAL', 'PROFESSIONAL']),
-  format: z.enum(['SCRUM', 'KANBAN']).optional().default('SCRUM'),
-})
-
-const updateProjectSchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().optional().nullable(),
-  status: z.enum(['ACTIVE', 'COMPLETED', 'PAUSED']).optional(),
-})
-
-function toDTO(row: ProjectRow): ProjectDTO {
+function toProjectDTO(row: {
+  id: number;
+  name: string;
+  description: string | null;
+  type: string;
+  format: string;
+  status: string;
+  created_at: Date;
+}): ProjectDTO {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
-    type: row.type,
-    format: row.format,
-    status: row.status,
-    createdAt: row.created_at instanceof Date
-      ? row.created_at.toISOString()
-      : String(row.created_at),
-  }
+    type: row.type as ProjectDTO['type'],
+    format: row.format as ProjectDTO['format'],
+    status: row.status as ProjectDTO['status'],
+    createdAt: row.created_at,
+  };
 }
 
-export default async function projectRoutes(app: FastifyInstance): Promise<void> {
+export async function projectRoutes(fastify: FastifyInstance): Promise<void> {
   /**
-   * GET /projects?type=PERSONAL|PROFESSIONAL
-   * Returns all projects belonging to the authenticated user, optionally filtered by type.
+   * GET /api/projects
+   * Query param: ?type=PERSONAL|PROFESSIONAL
    */
-  app.get('/projects', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { type } = request.query as { type?: string }
+  fastify.get(
+    '/api/projects',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { type } = request.query as { type?: ProjectType };
 
-    let result
-    if (type) {
-      result = await pool.query<ProjectRow>(
-        'SELECT * FROM projects WHERE user_id = $1 AND type = $2 ORDER BY created_at DESC',
-        [user.id, type],
-      )
-    } else {
-      result = await pool.query<ProjectRow>(
-        'SELECT * FROM projects WHERE user_id = $1 ORDER BY created_at DESC',
-        [user.id],
-      )
-    }
+      let result;
+      if (type) {
+        result = await pool.query(
+          `SELECT id, name, description, type, format, status, created_at
+           FROM projects WHERE user_id = $1 AND type = $2
+           ORDER BY created_at DESC`,
+          [userId, type],
+        );
+      } else {
+        result = await pool.query(
+          `SELECT id, name, description, type, format, status, created_at
+           FROM projects WHERE user_id = $1
+           ORDER BY created_at DESC`,
+          [userId],
+        );
+      }
 
-    return reply.send(result.rows.map(toDTO))
-  })
-
-  /**
-   * POST /projects
-   * Body: { name, description, type, format? }
-   */
-  app.post('/projects', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const parsed = createProjectSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
-    }
-    const { name, description, type, format } = parsed.data
-
-    const result = await pool.query<ProjectRow>(
-      `INSERT INTO projects (name, description, type, format, status, user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, 'ACTIVE', $5, NOW(), NOW())
-       RETURNING *`,
-      [name, description ?? null, type, format, user.id],
-    )
-
-    return reply.status(200).send(toDTO(result.rows[0]))
-  })
+      return reply.send(result.rows.map(toProjectDTO));
+    },
+  );
 
   /**
-   * GET /projects/:id
+   * POST /api/projects
    */
-  app.get('/projects/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.post(
+    '/api/projects',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
 
-    const result = await pool.query<ProjectRow>(
-      'SELECT * FROM projects WHERE id = $1 AND user_id = $2',
-      [id, user.id],
-    )
+      const parsed = createProjectSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.errors.map((e) => e.message).join(', ');
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message,
+        });
+      }
 
-    if ((result.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: 'Project not found' })
-    }
+      const { name, description, type, format } = parsed.data;
+      const projectFormat = format ?? 'SCRUM';
 
-    return reply.send(toDTO(result.rows[0]))
-  })
+      const result = await pool.query(
+        `INSERT INTO projects (name, description, type, format, status, user_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'ACTIVE', $5, NOW(), NOW())
+         RETURNING id, name, description, type, format, status, created_at`,
+        [name, description ?? null, type, projectFormat, userId],
+      );
+
+      return reply.status(200).send(toProjectDTO(result.rows[0]));
+    },
+  );
 
   /**
-   * PUT /projects/:id
-   * Body: { name?, description?, status? }
+   * GET /api/projects/:id
    */
-  app.put('/projects/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.get(
+    '/api/projects/:id',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { id } = request.params as { id: string };
 
-    const parsed = updateProjectSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
-    }
+      const result = await pool.query(
+        `SELECT id, name, description, type, format, status, created_at
+         FROM projects WHERE id = $1 AND user_id = $2`,
+        [id, userId],
+      );
 
-    // Fetch existing project first
-    const existing = await pool.query<ProjectRow>(
-      'SELECT * FROM projects WHERE id = $1 AND user_id = $2',
-      [id, user.id],
-    )
-    if ((existing.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: 'Project not found' })
-    }
+      if (result.rows.length === 0) {
+        return reply.status(404).send({
+          timestamp: new Date().toISOString(),
+          status: 404,
+          error: 'Not Found',
+          message: 'Project not found',
+        });
+      }
 
-    const project = existing.rows[0]
-    const { name, description, status } = parsed.data
-
-    const newName = (name && name.trim()) ? name : project.name
-    const newDescription = description !== undefined ? description : project.description
-    const newStatus = status ?? project.status
-
-    const result = await pool.query<ProjectRow>(
-      `UPDATE projects
-       SET name = $1, description = $2, status = $3, updated_at = NOW()
-       WHERE id = $4 AND user_id = $5
-       RETURNING *`,
-      [newName, newDescription, newStatus, id, user.id],
-    )
-
-    return reply.send(toDTO(result.rows[0]))
-  })
+      return reply.send(toProjectDTO(result.rows[0]));
+    },
+  );
 
   /**
-   * DELETE /projects/:id
+   * PUT /api/projects/:id
    */
-  app.delete('/projects/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.put(
+    '/api/projects/:id',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { id } = request.params as { id: string };
 
-    const result = await pool.query(
-      'DELETE FROM projects WHERE id = $1 AND user_id = $2',
-      [id, user.id],
-    )
+      const parsed = updateProjectSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.errors.map((e) => e.message).join(', ');
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message,
+        });
+      }
 
-    if ((result.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: 'Project not found' })
-    }
+      // Fetch existing project
+      const existing = await pool.query(
+        'SELECT id, name, description, status FROM projects WHERE id = $1 AND user_id = $2',
+        [id, userId],
+      );
+      if (existing.rows.length === 0) {
+        return reply.status(404).send({
+          timestamp: new Date().toISOString(),
+          status: 404,
+          error: 'Not Found',
+          message: 'Project not found',
+        });
+      }
 
-    return reply.status(204).send()
-  })
+      const current = existing.rows[0];
+      const { name, description, status } = parsed.data;
+
+      const newName = name && name.trim() ? name : current.name;
+      const newDescription = description !== undefined ? description : current.description;
+      const newStatus = status ?? current.status;
+
+      const result = await pool.query(
+        `UPDATE projects
+         SET name = $1, description = $2, status = $3, updated_at = NOW()
+         WHERE id = $4 AND user_id = $5
+         RETURNING id, name, description, type, format, status, created_at`,
+        [newName, newDescription, newStatus, id, userId],
+      );
+
+      return reply.send(toProjectDTO(result.rows[0]));
+    },
+  );
+
+  /**
+   * DELETE /api/projects/:id
+   */
+  fastify.delete(
+    '/api/projects/:id',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { id } = request.params as { id: string };
+
+      const existing = await pool.query(
+        'SELECT id FROM projects WHERE id = $1 AND user_id = $2',
+        [id, userId],
+      );
+      if (existing.rows.length === 0) {
+        return reply.status(404).send({
+          timestamp: new Date().toISOString(),
+          status: 404,
+          error: 'Not Found',
+          message: 'Project not found',
+        });
+      }
+
+      await pool.query('DELETE FROM projects WHERE id = $1', [id]);
+      return reply.status(204).send();
+    },
+  );
 }
