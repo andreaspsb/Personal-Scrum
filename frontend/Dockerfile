@@ -7,6 +7,8 @@ RUN npm run build
 
 FROM nginx:alpine
 ENV NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE=0
+ENV PORT=80
+ENV API_UPSTREAM=backend-node:3000
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 EXPOSE 80
