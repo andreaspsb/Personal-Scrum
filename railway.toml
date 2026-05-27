@@ -1,17 +1,18 @@
 [build]
 builder = "NIXPACKS"
 
-[deploy]
-startCommand = "java -jar app.jar"
-healthcheckPath = "/actuator/health"
-healthcheckTimeout = 60
-
 [[services]]
 name = "backend"
 source = "backend"
 
 [services.build]
+builder = "NIXPACKS"
 buildCommand = "mvn package -DskipTests -B"
+
+[services.deploy]
+startCommand = "java -jar app.jar"
+healthcheckPath = "/actuator/health"
+healthcheckTimeout = 60
 
 [services.variables]
 PORT = "8080"
