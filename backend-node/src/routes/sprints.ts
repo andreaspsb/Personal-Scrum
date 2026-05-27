@@ -1,263 +1,322 @@
-import { FastifyInstance, FastifyRequest } from 'fastify'
-import { z } from 'zod'
-import pool from '../db'
-import { authenticate } from '../middleware/auth'
-import type { AuthenticatedUser, SprintRow, UserStoryRow, SprintDTO } from '../types'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import pool from '../db';
+import { authenticate } from '../middleware/auth';
+import { createSprintSchema, updateSprintSchema } from '../utils/validation';
+import { SprintDTO } from '../types';
 
-type AuthRequest = FastifyRequest & { user: AuthenticatedUser }
+type AuthRequest = FastifyRequest & { userId: number };
 
-const createSprintSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  goal: z.string().optional().nullable(),
-  startDate: z.string().optional().nullable(),
-  endDate: z.string().optional().nullable(),
-  projectId: z.number().int().positive(),
-})
-
-const updateSprintSchema = z.object({
-  name: z.string().min(1).optional(),
-  goal: z.string().optional().nullable(),
-  startDate: z.string().optional().nullable(),
-  endDate: z.string().optional().nullable(),
-  status: z.enum(['PLANNED', 'ACTIVE', 'COMPLETED', 'CANCELLED']).optional(),
-})
-
-async function buildSprintDTO(sprint: SprintRow): Promise<SprintDTO> {
-  const storiesResult = await pool.query<UserStoryRow>(
-    'SELECT id, status FROM user_stories WHERE sprint_id = $1',
-    [sprint.id],
-  )
-  const stories = storiesResult.rows
-  const completedCount = stories.filter((s) => s.status === 'DONE').length
+async function buildSprintDTO(row: {
+  id: number;
+  name: string;
+  goal: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+  project_id: number;
+  velocity: number | null;
+}): Promise<SprintDTO> {
+  const storiesResult = await pool.query<{ status: string }>(
+    'SELECT status FROM user_stories WHERE sprint_id = $1',
+    [row.id],
+  );
+  const stories = storiesResult.rows;
+  const completedStoryCount = stories.filter((s) => s.status === 'DONE').length;
 
   return {
-    id: sprint.id,
-    name: sprint.name,
-    goal: sprint.goal,
-    startDate: sprint.start_date,
-    endDate: sprint.end_date,
-    status: sprint.status,
-    projectId: sprint.project_id,
-    velocity: sprint.velocity,
+    id: row.id,
+    name: row.name,
+    goal: row.goal,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    status: row.status as SprintDTO['status'],
+    projectId: row.project_id,
+    velocity: row.velocity,
     storyCount: stories.length,
-    completedStoryCount: completedCount,
-  }
+    completedStoryCount,
+  };
 }
 
-/**
- * Verify that a sprint belongs to a project owned by the given user.
- * Returns the sprint row or null if not found / not authorized.
- */
 async function findSprintForUser(
   sprintId: string | number,
   userId: number,
-): Promise<SprintRow | null> {
-  const result = await pool.query<SprintRow>(
-    `SELECT s.* FROM sprints s
-     JOIN projects p ON p.id = s.project_id
+  reply: FastifyReply,
+): Promise<{
+  id: number;
+  name: string;
+  goal: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+  project_id: number;
+  velocity: number | null;
+} | null> {
+  const result = await pool.query(
+    `SELECT s.id, s.name, s.goal, s.start_date, s.end_date, s.status, s.project_id, s.velocity
+     FROM sprints s
+     JOIN projects p ON s.project_id = p.id
      WHERE s.id = $1 AND p.user_id = $2`,
     [sprintId, userId],
-  )
-  return result.rows[0] ?? null
+  );
+
+  if (result.rows.length === 0) {
+    reply.status(404).send({
+      timestamp: new Date().toISOString(),
+      status: 404,
+      error: 'Not Found',
+      message: 'Sprint not found',
+    });
+    return null;
+  }
+
+  return result.rows[0];
 }
 
-export default async function sprintRoutes(app: FastifyInstance): Promise<void> {
+export async function sprintRoutes(fastify: FastifyInstance): Promise<void> {
   /**
-   * GET /sprints?projectId=X
-   * Returns all sprints for a project owned by the authenticated user.
+   * GET /api/sprints?projectId=:projectId
    */
-  app.get('/sprints', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { projectId } = request.query as { projectId?: string }
+  fastify.get(
+    '/api/sprints',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { projectId } = request.query as { projectId?: string };
 
-    if (!projectId) {
-      return reply.status(400).send({ message: 'projectId query parameter is required' })
-    }
+      if (!projectId) {
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message: 'projectId query parameter is required',
+        });
+      }
 
-    // Verify project ownership
-    const projectResult = await pool.query(
-      'SELECT id FROM projects WHERE id = $1 AND user_id = $2',
-      [projectId, user.id],
-    )
-    if ((projectResult.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: 'Project not found' })
-    }
+      // Verify project belongs to user
+      const projectCheck = await pool.query(
+        'SELECT id FROM projects WHERE id = $1 AND user_id = $2',
+        [projectId, userId],
+      );
+      if (projectCheck.rows.length === 0) {
+        return reply.status(404).send({
+          timestamp: new Date().toISOString(),
+          status: 404,
+          error: 'Not Found',
+          message: 'Project not found',
+        });
+      }
 
-    const result = await pool.query<SprintRow>(
-      'SELECT * FROM sprints WHERE project_id = $1 ORDER BY created_at ASC',
-      [projectId],
-    )
+      const result = await pool.query(
+        `SELECT id, name, goal, start_date, end_date, status, project_id, velocity
+         FROM sprints WHERE project_id = $1
+         ORDER BY created_at DESC`,
+        [projectId],
+      );
 
-    const dtos = await Promise.all(result.rows.map(buildSprintDTO))
-    return reply.send(dtos)
-  })
-
-  /**
-   * POST /sprints
-   * Body: { name, goal?, startDate?, endDate?, projectId }
-   */
-  app.post('/sprints', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const parsed = createSprintSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
-    }
-    const { name, goal, startDate, endDate, projectId } = parsed.data
-
-    // Verify project ownership and format
-    const projectResult = await pool.query<{ id: number; format: string }>(
-      'SELECT id, format FROM projects WHERE id = $1 AND user_id = $2',
-      [projectId, user.id],
-    )
-    if ((projectResult.rowCount ?? 0) === 0) {
-      return reply.status(404).send({ message: 'Project not found' })
-    }
-    if (projectResult.rows[0].format !== 'SCRUM') {
-      return reply.status(400).send({ message: 'Sprints are only available for SCRUM projects' })
-    }
-
-    const result = await pool.query<SprintRow>(
-      `INSERT INTO sprints (name, goal, start_date, end_date, status, project_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, 'PLANNED', $5, NOW(), NOW())
-       RETURNING *`,
-      [name, goal ?? null, startDate ?? null, endDate ?? null, projectId],
-    )
-
-    return reply.status(200).send(await buildSprintDTO(result.rows[0]))
-  })
+      const dtos = await Promise.all(result.rows.map(buildSprintDTO));
+      return reply.send(dtos);
+    },
+  );
 
   /**
-   * GET /sprints/:id
+   * POST /api/sprints
    */
-  app.get('/sprints/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.post(
+    '/api/sprints',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
 
-    const sprint = await findSprintForUser(id, user.id)
-    if (!sprint) {
-      return reply.status(404).send({ message: 'Sprint not found' })
-    }
+      const parsed = createSprintSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.errors.map((e) => e.message).join(', ');
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message,
+        });
+      }
 
-    return reply.send(await buildSprintDTO(sprint))
-  })
+      const { name, goal, startDate, endDate, projectId } = parsed.data;
+
+      // Verify project belongs to user and is SCRUM format
+      const projectResult = await pool.query(
+        'SELECT id, format FROM projects WHERE id = $1 AND user_id = $2',
+        [projectId, userId],
+      );
+      if (projectResult.rows.length === 0) {
+        return reply.status(404).send({
+          timestamp: new Date().toISOString(),
+          status: 404,
+          error: 'Not Found',
+          message: 'Project not found',
+        });
+      }
+
+      if (projectResult.rows[0].format !== 'SCRUM') {
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message: 'Sprints are only available for SCRUM projects',
+        });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO sprints (name, goal, start_date, end_date, status, project_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'PLANNED', $5, NOW(), NOW())
+         RETURNING id, name, goal, start_date, end_date, status, project_id, velocity`,
+        [name, goal ?? null, startDate ?? null, endDate ?? null, projectId],
+      );
+
+      const dto = await buildSprintDTO(result.rows[0]);
+      return reply.status(200).send(dto);
+    },
+  );
 
   /**
-   * PUT /sprints/:id
-   * Body: { name?, goal?, startDate?, endDate?, status? }
+   * GET /api/sprints/:id
    */
-  app.put('/sprints/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.get(
+    '/api/sprints/:id',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { id } = request.params as { id: string };
 
-    const parsed = updateSprintSchema.safeParse(request.body)
-    if (!parsed.success) {
-      return reply.status(400).send({ message: parsed.error.errors[0].message })
-    }
+      const sprint = await findSprintForUser(id, userId, reply);
+      if (!sprint) return;
 
-    const sprint = await findSprintForUser(id, user.id)
-    if (!sprint) {
-      return reply.status(404).send({ message: 'Sprint not found' })
-    }
-
-    const { name, goal, startDate, endDate, status } = parsed.data
-
-    const newName = (name && name.trim()) ? name : sprint.name
-    const newGoal = goal !== undefined ? goal : sprint.goal
-    const newStartDate = startDate !== undefined ? startDate : sprint.start_date
-    const newEndDate = endDate !== undefined ? endDate : sprint.end_date
-    const newStatus = status ?? sprint.status
-
-    const result = await pool.query<SprintRow>(
-      `UPDATE sprints
-       SET name = $1, goal = $2, start_date = $3, end_date = $4, status = $5, updated_at = NOW()
-       WHERE id = $6
-       RETURNING *`,
-      [newName, newGoal, newStartDate, newEndDate, newStatus, id],
-    )
-
-    return reply.send(await buildSprintDTO(result.rows[0]))
-  })
+      const dto = await buildSprintDTO(sprint);
+      return reply.send(dto);
+    },
+  );
 
   /**
-   * DELETE /sprints/:id
+   * PUT /api/sprints/:id
    */
-  app.delete('/sprints/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.put(
+    '/api/sprints/:id',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { id } = request.params as { id: string };
 
-    const sprint = await findSprintForUser(id, user.id)
-    if (!sprint) {
-      return reply.status(404).send({ message: 'Sprint not found' })
-    }
+      const parsed = updateSprintSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.errors.map((e) => e.message).join(', ');
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message,
+        });
+      }
 
-    await pool.query('DELETE FROM sprints WHERE id = $1', [id])
-    return reply.status(204).send()
-  })
+      const sprint = await findSprintForUser(id, userId, reply);
+      if (!sprint) return;
+
+      const { name, goal, startDate, endDate, status } = parsed.data;
+
+      const newName = name && name.trim() ? name : sprint.name;
+      const newGoal = goal !== undefined ? goal : sprint.goal;
+      const newStartDate = startDate !== undefined ? startDate : sprint.start_date;
+      const newEndDate = endDate !== undefined ? endDate : sprint.end_date;
+      const newStatus = status ?? sprint.status;
+
+      const result = await pool.query(
+        `UPDATE sprints
+         SET name = $1, goal = $2, start_date = $3, end_date = $4, status = $5, updated_at = NOW()
+         WHERE id = $6
+         RETURNING id, name, goal, start_date, end_date, status, project_id, velocity`,
+        [newName, newGoal, newStartDate, newEndDate, newStatus, id],
+      );
+
+      const dto = await buildSprintDTO(result.rows[0]);
+      return reply.send(dto);
+    },
+  );
 
   /**
-   * POST /sprints/:id/start
-   * Transitions a PLANNED sprint to ACTIVE.
+   * POST /api/sprints/:id/start
    */
-  app.post('/sprints/:id/start', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.post(
+    '/api/sprints/:id/start',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { id } = request.params as { id: string };
 
-    const sprint = await findSprintForUser(id, user.id)
-    if (!sprint) {
-      return reply.status(404).send({ message: 'Sprint not found' })
-    }
-    if (sprint.status !== 'PLANNED') {
-      return reply.status(400).send({ message: 'Only PLANNED sprints can be started' })
-    }
+      const sprint = await findSprintForUser(id, userId, reply);
+      if (!sprint) return;
 
-    // Set startDate to today if not already set
-    const startDate = sprint.start_date ?? new Date().toISOString().split('T')[0]
+      if (sprint.status !== 'PLANNED') {
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message: 'Only PLANNED sprints can be started',
+        });
+      }
 
-    const result = await pool.query<SprintRow>(
-      `UPDATE sprints
-       SET status = 'ACTIVE', start_date = $1, updated_at = NOW()
-       WHERE id = $2
-       RETURNING *`,
-      [startDate, id],
-    )
+      const startDate = sprint.start_date ?? new Date().toISOString().split('T')[0];
 
-    return reply.send(await buildSprintDTO(result.rows[0]))
-  })
+      const result = await pool.query(
+        `UPDATE sprints
+         SET status = 'ACTIVE', start_date = $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, name, goal, start_date, end_date, status, project_id, velocity`,
+        [startDate, id],
+      );
+
+      const dto = await buildSprintDTO(result.rows[0]);
+      return reply.send(dto);
+    },
+  );
 
   /**
-   * POST /sprints/:id/complete
-   * Transitions an ACTIVE sprint to COMPLETED and calculates velocity.
+   * POST /api/sprints/:id/complete
    */
-  app.post('/sprints/:id/complete', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
-    const { id } = request.params as { id: string }
+  fastify.post(
+    '/api/sprints/:id/complete',
+    { preHandler: authenticate },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = (request as AuthRequest).userId;
+      const { id } = request.params as { id: string };
 
-    const sprint = await findSprintForUser(id, user.id)
-    if (!sprint) {
-      return reply.status(404).send({ message: 'Sprint not found' })
-    }
-    if (sprint.status !== 'ACTIVE') {
-      return reply.status(400).send({ message: 'Only ACTIVE sprints can be completed' })
-    }
+      const sprint = await findSprintForUser(id, userId, reply);
+      if (!sprint) return;
 
-    // Calculate velocity: sum of story points for DONE stories
-    const velocityResult = await pool.query<{ velocity: string }>(
-      `SELECT COALESCE(SUM(story_points), 0) AS velocity
-       FROM user_stories
-       WHERE sprint_id = $1 AND status = 'DONE'`,
-      [id],
-    )
-    const velocity = parseInt(velocityResult.rows[0].velocity, 10)
-    const endDate = sprint.end_date ?? new Date().toISOString().split('T')[0]
+      if (sprint.status !== 'ACTIVE') {
+        return reply.status(400).send({
+          timestamp: new Date().toISOString(),
+          status: 400,
+          error: 'Bad Request',
+          message: 'Only ACTIVE sprints can be completed',
+        });
+      }
 
-    const result = await pool.query<SprintRow>(
-      `UPDATE sprints
-       SET status = 'COMPLETED', velocity = $1, end_date = $2, updated_at = NOW()
-       WHERE id = $3
-       RETURNING *`,
-      [velocity, endDate, id],
-    )
+      // Calculate velocity: sum of story points for DONE stories
+      const velocityResult = await pool.query<{ velocity: string }>(
+        `SELECT COALESCE(SUM(story_points), 0) AS velocity
+         FROM user_stories
+         WHERE sprint_id = $1 AND status = 'DONE'`,
+        [id],
+      );
+      const velocity = parseInt(velocityResult.rows[0].velocity, 10);
+      const endDate = sprint.end_date ?? new Date().toISOString().split('T')[0];
 
-    return reply.send(await buildSprintDTO(result.rows[0]))
-  })
+      const result = await pool.query(
+        `UPDATE sprints
+         SET status = 'COMPLETED', velocity = $1, end_date = $2, updated_at = NOW()
+         WHERE id = $3
+         RETURNING id, name, goal, start_date, end_date, status, project_id, velocity`,
+        [velocity, endDate, id],
+      );
+
+      const dto = await buildSprintDTO(result.rows[0]);
+      return reply.send(dto);
+    },
+  );
 }
