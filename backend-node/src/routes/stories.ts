@@ -2,9 +2,10 @@ import { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import pool from '../db'
 import { authenticate } from '../middleware/auth'
-import type { AuthenticatedUser, UserStoryRow, UserStoryDTO } from '../types'
+import type { UserStory, UserStoryDTO } from '../types'
 
-type AuthRequest = FastifyRequest & { user: AuthenticatedUser }
+type UserStoryRow = UserStory
+type AuthRequest = FastifyRequest & { userId: number }
 
 const createStorySchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -66,7 +67,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
    * GET /stories?sprintId=X    → sprint stories
    */
   app.get('/stories', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
+    const { userId } = request as AuthRequest
     const { projectId, sprintId } = request.query as {
       projectId?: string
       sprintId?: string
@@ -78,7 +79,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
         `SELECT s.id FROM sprints s
          JOIN projects p ON p.id = s.project_id
          WHERE s.id = $1 AND p.user_id = $2`,
-        [sprintId, user.id],
+        [sprintId, userId],
       )
       if ((sprintResult.rowCount ?? 0) === 0) {
         return reply.status(404).send({ message: 'Sprint not found' })
@@ -95,7 +96,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
       // Verify project ownership
       const projectResult = await pool.query(
         'SELECT id FROM projects WHERE id = $1 AND user_id = $2',
-        [projectId, user.id],
+        [projectId, userId],
       )
       if ((projectResult.rowCount ?? 0) === 0) {
         return reply.status(404).send({ message: 'Project not found' })
@@ -119,7 +120,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
    * Body: { title, description?, acceptanceCriteria?, storyPoints?, priority?, projectId, sprintId? }
    */
   app.post('/stories', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
+    const { userId } = request as AuthRequest
     const parsed = createStorySchema.safeParse(request.body)
     if (!parsed.success) {
       return reply.status(400).send({ message: parsed.error.errors[0].message })
@@ -130,7 +131,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
     // Verify project ownership and get format
     const projectResult = await pool.query<{ id: number; format: string }>(
       'SELECT id, format FROM projects WHERE id = $1 AND user_id = $2',
-      [projectId, user.id],
+      [projectId, userId],
     )
     if ((projectResult.rowCount ?? 0) === 0) {
       return reply.status(404).send({ message: 'Project not found' })
@@ -163,10 +164,10 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
    * GET /stories/:id
    */
   app.get('/stories/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
+    const { userId } = request as AuthRequest
     const { id } = request.params as { id: string }
 
-    const story = await findStoryForUser(id, user.id)
+    const story = await findStoryForUser(id, userId)
     if (!story) {
       return reply.status(404).send({ message: 'User story not found' })
     }
@@ -179,7 +180,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
    * Body: { title?, description?, acceptanceCriteria?, storyPoints?, priority?, status?, sprintId? }
    */
   app.put('/stories/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
+    const { userId } = request as AuthRequest
     const { id } = request.params as { id: string }
 
     const parsed = updateStorySchema.safeParse(request.body)
@@ -187,7 +188,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ message: parsed.error.errors[0].message })
     }
 
-    const story = await findStoryForUser(id, user.id)
+    const story = await findStoryForUser(id, userId)
     if (!story) {
       return reply.status(404).send({ message: 'User story not found' })
     }
@@ -201,7 +202,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
         `SELECT s.project_id FROM sprints s
          JOIN projects p ON p.id = s.project_id
          WHERE s.id = $1 AND p.user_id = $2`,
-        [sprintId, user.id],
+        [sprintId, userId],
       )
       if ((sprintResult.rowCount ?? 0) === 0) {
         return reply.status(404).send({ message: 'Sprint not found' })
@@ -237,7 +238,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
    * Moves a backlog story into a sprint and sets status to TODO.
    */
   app.post('/stories/:id/move-to-sprint', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
+    const { userId } = request as AuthRequest
     const { id } = request.params as { id: string }
 
     const parsed = moveToSprintSchema.safeParse(request.body)
@@ -246,7 +247,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
     }
     const { sprintId } = parsed.data
 
-    const story = await findStoryForUser(id, user.id)
+    const story = await findStoryForUser(id, userId)
     if (!story) {
       return reply.status(404).send({ message: 'User story not found' })
     }
@@ -265,7 +266,7 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
       `SELECT s.project_id FROM sprints s
        JOIN projects p ON p.id = s.project_id
        WHERE s.id = $1 AND p.user_id = $2`,
-      [sprintId, user.id],
+      [sprintId, userId],
     )
     if ((sprintResult.rowCount ?? 0) === 0) {
       return reply.status(404).send({ message: 'Sprint not found' })
@@ -289,10 +290,10 @@ export default async function storyRoutes(app: FastifyInstance): Promise<void> {
    * DELETE /stories/:id
    */
   app.delete('/stories/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { user } = request as AuthRequest
+    const { userId } = request as AuthRequest
     const { id } = request.params as { id: string }
 
-    const story = await findStoryForUser(id, user.id)
+    const story = await findStoryForUser(id, userId)
     if (!story) {
       return reply.status(404).send({ message: 'User story not found' })
     }
