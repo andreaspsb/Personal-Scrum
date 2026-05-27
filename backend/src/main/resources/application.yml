@@ -27,8 +27,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,logfile
-
-logging:
-  file:
-    name: logs/spring.log
+        include: health
